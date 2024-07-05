@@ -4,6 +4,7 @@ from telegram.error import TelegramError
 from dotenv import load_dotenv
 from os import getenv
 from prefect import flow
+from datetime import timedelta
 import logging
 import asyncio
 from lxml import etree
