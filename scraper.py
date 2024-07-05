@@ -1,6 +1,8 @@
 from telegram import Bot
 from telegram.constants import ParseMode
 from telegram.error import TelegramError
+from dotenv import load_dotenv
+from os import getenv
 from prefect import flow
 import logging
 import asyncio
@@ -15,7 +17,7 @@ import re
 # Set up logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
-
+load_dotenv()
 
 
 class HahuScraper:
@@ -238,10 +240,8 @@ class MessageContent:
 class TelegramPoster:
 # Replace with your bot's token
     def __init__(self):
-        self.TOKEN = '7126492927:AAFvTyG6pCn5HiUuUfDp_xOSXc7ZXDq5CuA'
-        self.CHANNEL_ID = '-1002194628779'  # Replace with your channel username
-    
-    
+        self.TOKEN = getenv("TELEGRAM_BOT_TOKEN")
+        self.CHANNEL_ID = getenv("TELEGRAM_CHANNEL_ID")
 
     async def post_to_channel(self, job):
         try:
@@ -251,7 +251,7 @@ class TelegramPoster:
                 message = message_content.hahu_message_content(job)
             else:
                 message_content = MessageContent()
-                message = message_content.harmee_message_content(job["job_detail"])
+                message = message_content.harmee_message_content(job)
             bot = Bot(token=self.TOKEN)
             await bot.send_message(chat_id=self.CHANNEL_ID, text=message, parse_mode=ParseMode.HTML)
             logger.info(f"Message posted to {self.CHANNEL_ID}: {message}")
@@ -259,6 +259,7 @@ class TelegramPoster:
             logger.error(f"Failed to post message to {self.CHANNEL_ID}: {e}")
 
     # Example usage
+
 @flow(log_prints=True)
 async def main():
     telegram_poster = TelegramPoster()
@@ -272,7 +273,7 @@ async def main():
         await telegram_poster.post_to_channel(job)
 
 if __name__ == "__main__":
-    asyncio.run(main.serve(name="auto-job-post", interval=60))
+    asyncio.run(main.serve(name="auto-job-post", interval=timedelta(days=1)))
 
     # async def main():
     #     telegram_poster = TelegramPoster()
