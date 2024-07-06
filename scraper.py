@@ -268,6 +268,7 @@ class TelegramPoster:
 async def server():
     return "Hi"
 
+@app.post("/api/task")
 @app.get("/api/task")
 async def main():
     telegram_poster = TelegramPoster()
@@ -279,3 +280,4 @@ async def main():
     print(json.dumps(jobs, indent=4))
     for job in jobs:
         await telegram_poster.post_to_channel(job)
+
