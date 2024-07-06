@@ -1,9 +1,10 @@
+from fastapi import FastAPI
+import uvicorn
 from telegram import Bot
 from telegram.constants import ParseMode
 from telegram.error import TelegramError
 from dotenv import load_dotenv
 from os import getenv
-from prefect import flow
 from datetime import timedelta
 import logging
 import asyncio
@@ -14,6 +15,9 @@ import requests
 import lxml
 import bs4
 import re
+
+app = FastAPI()
+
 
 # Set up logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -259,9 +263,12 @@ class TelegramPoster:
         except TelegramError as e:
             logger.error(f"Failed to post message to {self.CHANNEL_ID}: {e}")
 
-    # Example usage
 
-@flow(log_prints=True)
+@app.get("/api")
+async def server():
+    return "Hi"
+
+@app.get("/api/task")
 async def main():
     telegram_poster = TelegramPoster()
     harmee = HarmeeScraper()
@@ -272,18 +279,3 @@ async def main():
     print(json.dumps(jobs, indent=4))
     for job in jobs:
         await telegram_poster.post_to_channel(job)
-
-if __name__ == "__main__":
-    asyncio.run(main.serve(name="auto-job-post", interval=timedelta(days=1)))
-
-    # async def main():
-    #     telegram_poster = TelegramPoster()
-    #     harmee = HarmeeScraper()
-    #     # hahu = HahuScraper()
-    #     jobs = harmee.job_post()
-    #     # jobs = hahu.get_jobs()
-    #     jobs = jobs[::-1]
-    #     print(json.dumps(jobs, indent=4))
-    #     # for job in jobs:
-    #         # await telegram_poster.post_to_channel(job)
-    # asyncio.run(main())
