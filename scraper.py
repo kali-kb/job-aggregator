@@ -41,7 +41,7 @@ class HahuScraper:
         experience = page.select_one("div.gap-2:nth-child(3) > p:nth-child(2)").text.strip()
         number_of_positions = page.select_one("div.items-center:nth-child(4) > p:nth-child(2)").text.strip()
         job_sector = page.select_one("div.gap-2:nth-child(1) > p:nth-child(2)").text.strip()
-        expiration_date = page.select_one("div.items-center:nth-child(5) > p:nth-child(4)").text.strip()
+        # expiration_date = page.select_one("div.items-center:nth-child(5) > p:nth-child(4)").text.strip()
         # apply_link = page.select(".mb-20")
         # tree = etree.HTML(str(page))
         job = {
@@ -52,7 +52,7 @@ class HahuScraper:
             "company": company,
             "location": location,
             "experience": experience,
-            "expiration_date": expiration_date,
+            # "expiration_date": expiration_date,
             "number_of_positions": number_of_positions,
             "job_link": job_link
         }
@@ -93,7 +93,7 @@ class HarmeeScraper:
         page = bs4.BeautifulSoup(response.content, "html.parser")
         job_title = page.select_one(".job-overview > ul:nth-child(1) > li:nth-child(5) > div:nth-child(2) > span:nth-child(2)").text.strip() 
         company = page.select_one(".content > h4:nth-child(1) > a:nth-child(1) > strong:nth-child(1)").text.strip() if page.select_one(".content > h4:nth-child(1) > a:nth-child(1) > strong:nth-child(1)") else page.select_one(".content > h4:nth-child(1) > strong:nth-child(1)").text.strip() if page.select_one(".content > h4:nth-child(1) > strong:nth-child(1)") else ""
-        location = page.select_one("span.location > a:nth-child(1)").text.strip()
+        location = page.select_one("#job-details > div > div > ul > li:nth-child(4) > div > span").text.strip()
         date_posted = page.select_one(".job-overview > ul:nth-child(1) > li:nth-child(2) > div:nth-child(2) > span:nth-child(2) > time:nth-child(1)").text.strip()
         expiration_date = page.select_one(".job-overview > ul:nth-child(1) > li:nth-child(3) > div:nth-child(2) > span:nth-child(2)").text.strip()
         job_type = page.select_one("span.job-type, div.eleven:nth-child(1) > h1:nth-child(2) > span:nth-child(1)")
@@ -182,24 +182,24 @@ class MessageContent:
 
     def hahu_message_content(self, job):
         message = (
-            f"<b>Company/Organization</b>: {self.job['company']}\n"
+            f"<b>Company/Organization</b>: {job['company']}\n"
             f"\n"
-            f"<b>Job Title</b>: {self.job['job_title']}\n"
+            f"<b>Job Title</b>: {job['job_title']}\n"
             f"\n"
-            f"<b>Location</b>: {self.job['location']}\n"
+            f"<b>Location</b>: {job['location']}\n"
             f"\n"
-            f"<b>Job Type</b>: {self.job['job_type']}\n"
+            f"<b>Job Type</b>: {job['job_type']}\n"
             f"\n"
-            f"<b>Job Experience Required</b>: {self.job['experience']}\n"
+            f"<b>Job Experience Required</b>: {job['experience']}\n"
             f"\n"
-            f"<b>Available Position</b>: {self.job['number_of_positions']}\n"
+            f"<b>Available Position</b>: {job['number_of_positions']}\n"
             f"\n"
-            f"<b>Job Sector</b>: #{self.job['job_sector'].lower()}\n"
+            f"<b>Job Sector</b>: #{job['job_sector'].lower()}\n"
             f"\n"
-            f"<b>Expiration Date</b>: {self.job['expiration_date']}\n"
+            # f"<b>Expiration Date</b>: {self.job['expiration_date']}\n"
             f"---------------------------------\n"
             f"\n"
-            f"<b>Full Job Description</b>: 👉 {self.job['job_link']}\n"
+            f"<b>Full Job Description</b>: 👉 {job['job_link']}\n"
             f"\n\n\n"
             f"@arki_jobs\n"
         )
@@ -273,11 +273,15 @@ async def server():
 async def main():
     telegram_poster = TelegramPoster()
     harmee = HarmeeScraper()
-    # hahu = HahuScraper()
-    jobs = harmee.job_post()
-    # jobs = hahu.get_jobs()
+    hahu = HahuScraper()
+    harmee_jobs = harmee.job_post()
+    hahu_jobs = hahu.get_jobs()
+    jobs = harmee_jobs + hahu_jobs
     jobs = jobs[::-1]
     print(json.dumps(jobs, indent=4))
     for job in jobs:
         await telegram_poster.post_to_channel(job)
 
+# uncomment when testing locally
+# if __name__=="__main__":
+#     uvicorn.run("scraper:app", host="localhost", port=8000, reload=True)
