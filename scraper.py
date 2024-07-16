@@ -276,7 +276,9 @@ async def main():
     hahu = HahuScraper()
     harmee_jobs = harmee.job_post()
     hahu_jobs = hahu.get_jobs()
-    jobs = harmee_jobs + hahu_jobs
+    #telegram has a rate limit on message posting
+    # ERROR - Failed to post message to -1002194628779: Flood control exceeded. Retry in 37 seconds
+    jobs = harmee_jobs[:10] + hahu_jobs[:10]
     jobs = jobs[::-1]
     print(json.dumps(jobs, indent=4))
     for job in jobs:
@@ -284,4 +286,4 @@ async def main():
 
 # uncomment when testing locally
 # if __name__=="__main__":
-#     uvicorn.run("scraper:app", host="localhost", port=8000, reload=True)
+#     uvicorn.run("scraper:app", host="172.22.169.186", port=8000, reload=True)
