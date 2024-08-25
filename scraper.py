@@ -1,9 +1,13 @@
-from telegram import Bot
+from fastapi import FastAPI
+from datetime import datetime, timedelta
+import pprint
+import uvicorn
+from formatter import MessageContent
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.error import TelegramError
 from dotenv import load_dotenv
 from os import getenv
-from prefect import flow
 from datetime import timedelta
 import logging
 import asyncio
@@ -15,66 +19,132 @@ import lxml
 import bs4
 import re
 
+app = FastAPI()
+
+
 # Set up logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 load_dotenv()
 
 
-class HahuScraper:
+def job_detail(detail_page_link):
+    response = requests.get(detail_page_link)
+    soup = bs4.BeautifulSoup(response.content, "html.parser")
+    company = soup.find("h1").text
+    date = soup.find("time").text
+    about_post = {"vacancy_link": detail_page_link, "company":company, "date": date}
+    job_listings = []
+    current_job = {}
 
+    def extract_text(element):
+        if isinstance(element, bs4.NavigableString):
+            return element.strip()
+        return ' '.join(extract_text(child) for child in element.children if child.name != 'br')
+
+    for element in soup.find_all(['h4', 'p']):
+        if element.name == 'h4':
+            if current_job:
+                job_listings.append(current_job)
+            current_job = {'title': extract_text(element), 'details': []}
+        elif element.name == 'p' and current_job:
+            current_job['details'].append(extract_text(element))
+
+    if current_job:
+        job_listings.append(current_job)
+
+    return about_post, job_listings
+    # for job in job_listings:
+    #     print(f"Title: {job['title']}")
+    #     print("Details:")
+    #     for detail in job['details']:
+    #         print(f"- {detail}")
+    #     print("\n")
+    
+    print(job_listings)
+
+
+def daily_jobs_links():
+    response = requests.get("https://dailyjobsethiopia.com/category/banking-jobs/")
+    page = bs4.BeautifulSoup(response.content, "html.parser")
+    title_date_container = page.find_all("header", class_="entry-header")
+    links = []
+    for title_date in title_date_container:
+        if title_date:
+            job_detail_link = title_date.find("h2", class_="entry-title").a.get("href")
+            date = title_date.find("time").text
+            date_obj = datetime.strptime(date, "%B %d, %Y")
+            yesterday = datetime.now().date() - timedelta(days=1)
+            if date_obj.date() == yesterday:
+                links.append(job_detail_link)
+                # print(job_detail(job_detail_link))
+    return links
+            
+
+
+class HahuJobsQuery:
     def __init__(self):
-        self.url = "https://hahu.jobs/jobs"
-
-    def get_job_content(self, job_link):
-        print(job_link)
-        response = requests.get(job_link)
-        page = bs4.BeautifulSoup(response.content, "html.parser")
-        job_title = page.select_one(".font-extrabold").text.strip()
-        job_type = page.select_one("div.xl\:text-lg > div:nth-child(1)").text.strip()
-        company = page.select_one("p.text-secondary-6").text.strip()
-        location = page.select_one(".grid > div:nth-child(2) > p:nth-child(2)").text.strip()
-        experience = page.select_one("div.gap-2:nth-child(3) > p:nth-child(2)").text.strip()
-        number_of_positions = page.select_one("div.items-center:nth-child(4) > p:nth-child(2)").text.strip()
-        job_sector = page.select_one("div.gap-2:nth-child(1) > p:nth-child(2)").text.strip()
-        expiration_date = page.select_one("div.items-center:nth-child(5) > p:nth-child(4)").text.strip()
-        # apply_link = page.select(".mb-20")
-        # tree = etree.HTML(str(page))
-        job = {
-            "source": self.url,
-            "job_title": job_title,
-            "job_type": job_type,
-            "job_sector": job_sector,
-            "company": company,
-            "location": location,
-            "experience": experience,
-            "expiration_date": expiration_date,
-            "number_of_positions": number_of_positions,
-            "job_link": job_link
-        }
-        return job
-
+        self.endpoint = getenv("HAHU_ENDPOINT")
 
     def get_jobs(self):
-        job_links = []
-        jobs = []
-        response = requests.get(self.url)
-        soup = bs4.BeautifulSoup(response.content, "html.parser")
-        for link in soup.find_all('a', href=lambda href: href and href.startswith('https://app.hahu.jobs/app/jobs/')):
-            pattern = r"https://app\.hahu\.jobs/app/jobs/([a-f0-9]+)\?save=true"
-            match = re.search(pattern, link['href'])
-            if match:
-                path = self.url
-                job_id = str(match.group(1))
-                job_path = f"{path}/{job_id}"
-                jobs.append(self.get_job_content(job_path))
-                # job_links.append(job_path)
-        return jobs
+        today = datetime.utcnow().date()
+        yesterday = today - timedelta(days=1)
+        start_of_yesterday = datetime(yesterday.year, yesterday.month, yesterday.day).isoformat() + "+00:00"
+        query = f"""
+        query {{
+            jobs(where: {{expired: {{_eq: false}}, years_of_experience: {{_eq: 0}}, created_at: {{_gte: "{start_of_yesterday}"}}}}) {{
+                id
+                title
+                type
+                location
+                application_method
+                job_application_city {{
+                    name
+                }}
+                job_cities {{
+                    city {{
+                        name
+                    }}
+                }}
+                application_email
+                gender_priority
+                expired
+                deadline
+                years_of_experience
+                max_years_of_experience
+                application_method
+                application_url
+                salary
+                summary
+                how_to_apply
+                created_at
+                description
+                entity {{
+                    name
+                }}
+                sub_sector {{
+                    name    
+                }}
+            }}
+        }}
+        """
+        headers = {
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "query": query
+        }
+        response = requests.post(self.endpoint, json=payload, headers=headers)
+        if response.status_code == 200:
+            data = response.json()
+            jobs = data.get('data', {}).get('jobs', [])
+            for job in jobs:
+                job['source'] = 'hahu'
+            return jobs        
+        else:
+            logger.error(f"Error fetching jobs: {response.status_code} - {response.text}")
+            return None
 
- 
-# hs = HahuScraper()
-# print(hs.get_jobs())
-# hs.get_job_content("https://hahu.jobs/jobs/ZX57o7cmPELKwZC")
 
 class HarmeeScraper:
 
@@ -89,7 +159,7 @@ class HarmeeScraper:
         page = bs4.BeautifulSoup(response.content, "html.parser")
         job_title = page.select_one(".job-overview > ul:nth-child(1) > li:nth-child(5) > div:nth-child(2) > span:nth-child(2)").text.strip() 
         company = page.select_one(".content > h4:nth-child(1) > a:nth-child(1) > strong:nth-child(1)").text.strip() if page.select_one(".content > h4:nth-child(1) > a:nth-child(1) > strong:nth-child(1)") else page.select_one(".content > h4:nth-child(1) > strong:nth-child(1)").text.strip() if page.select_one(".content > h4:nth-child(1) > strong:nth-child(1)") else ""
-        location = page.select_one("span.location > a:nth-child(1)").text.strip()
+        location = page.select_one("#job-details > div > div > ul > li:nth-child(4) > div > span").text.strip()
         date_posted = page.select_one(".job-overview > ul:nth-child(1) > li:nth-child(2) > div:nth-child(2) > span:nth-child(2) > time:nth-child(1)").text.strip()
         expiration_date = page.select_one(".job-overview > ul:nth-child(1) > li:nth-child(3) > div:nth-child(2) > span:nth-child(2)").text.strip()
         job_type = page.select_one("span.job-type, div.eleven:nth-child(1) > h1:nth-child(2) > span:nth-child(1)")
@@ -102,8 +172,7 @@ class HarmeeScraper:
         apply_link = apply_link_element['href'] if apply_link_element else ""
         job_description = page.select_one(".job_description")
 
-        # return group_content(job_description)
-        # return job_title, company, apply_link, job_type, location, date_posted, expiration_date
+
         return {
             "source": self.url,
             "job_link": link,
@@ -168,122 +237,73 @@ class HarmeeScraper:
         return grouped_content
 
 
-hs = HarmeeScraper()
-# print(json.dumps(hs.job_post(), indent=4))
-# pprint.pprint(hs.job_post())
-# pprint.pprint(job_detail("https://harmeejobs.com/job/regional-sales-manager-2/"))
-# print(json.dumps(job_detail("https://harmeejobs.com/job/regional-sales-manager-2/"), indent=4))
-# print(json.dumps(clean_unicode_escape(job_detail("https://harmeejobs.com/job/regional-sales-manager-2/")), indent=4))
-class MessageContent:
-
-    def hahu_message_content(self, job):
-        message = (
-            f"<b>Company/Organization</b>: {self.job['company']}\n"
-            f"\n"
-            f"<b>Job Title</b>: {self.job['job_title']}\n"
-            f"\n"
-            f"<b>Location</b>: {self.job['location']}\n"
-            f"\n"
-            f"<b>Job Type</b>: {self.job['job_type']}\n"
-            f"\n"
-            f"<b>Job Experience Required</b>: {self.job['experience']}\n"
-            f"\n"
-            f"<b>Available Position</b>: {self.job['number_of_positions']}\n"
-            f"\n"
-            f"<b>Job Sector</b>: #{self.job['job_sector'].lower()}\n"
-            f"\n"
-            f"<b>Expiration Date</b>: {self.job['expiration_date']}\n"
-            f"---------------------------------\n"
-            f"\n"
-            f"<b>Full Job Description</b>: 👉 {self.job['job_link']}\n"
-            f"\n\n\n"
-            f"@arki_jobs\n"
-        )
-        return message
-
-    def harmee_message_content(self, job):
-        message = (
-            f"<b>Company/Organization</b>: {job['company']}\n"
-            f"\n"
-            f"<b>Job Title</b>: {job['job_title']}\n"
-            f"\n"
-            f"<b>Location</b>: {job['location']}\n"
-            f"\n"
-        )
-        if job['job_type'] != "":
-            message += f"\n<b>Job Type</b>: {job['job_type']}\n"
-
-        other_details = (
-            f"\n"
-            f"<b>Date Posted</b>: {job['date_posted']}\n"
-            f"\n"
-            f"<b>Expiration Date</b>: {job['expiration_date']}"
-            f"\n"
-            f"--------------------------\n"
-            f"\n"
-            f"\n\n\n"
-            f"<b>Full job information</b>: 👉 {job['job_link']}"
-            f"\n\n"
-            f"@arki_jobs\n"
-        )
-
-        if job['salary']!= "":
-            message += f"\n<b>Salary</b>: {job['salary']}\n"
-
-        if job['apply_link'] != "":
-            message += f"\n<b>Apply Link</b>: <a href='{job['apply_link']}'>Click here to apply</a>\n"
-
-        message += other_details
-
-        return message    
-
-
 class TelegramPoster:
 # Replace with your bot's token
     def __init__(self):
         self.TOKEN = getenv("TELEGRAM_BOT_TOKEN")
         self.CHANNEL_ID = getenv("TELEGRAM_CHANNEL_ID")
+        self.PRIVATE_CHANNEL_ID = getenv("TEST_TELEGRAM_CHANNEL_ID")
+    async def post_vacancies(self, about_post, jobs):
+        bot = Bot(token=self.TOKEN)
+        message_content = MessageContent()
+        # for job in jobs:
+        message = message_content.format_telegram_message(about_post, jobs)
+        await bot.send_message(chat_id=self.PRIVATE_CHANNEL_ID, text=message, parse_mode="HTML")
 
     async def post_to_channel(self, job):
         try:
             message = None
-            if job["source"] == "https://hahu.jobs/jobs":
+            # if job["source"] == "https://hahu.jobs/jobs":
+            if job["data"]["source"] == "hahu":
                 message_content = MessageContent()
-                message = message_content.hahu_message_content(job)
+                message = message_content.hahu_message_content(job["data"])
             else:
                 message_content = MessageContent()
-                message = message_content.harmee_message_content(job)
+                message = message_content.harmee_message_content(job["data"])
             bot = Bot(token=self.TOKEN)
-            await bot.send_message(chat_id=self.CHANNEL_ID, text=message, parse_mode=ParseMode.HTML)
+            if job["data"]["source"] == "hahu":
+                if job["data"]["application_method"] == "url":
+                    await bot.send_message(chat_id=self.CHANNEL_ID, text=message, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(
+                        [
+                            [InlineKeyboardButton("Read Full Detail", url=f"https://hahu.jobs/jobs/{job['data']['id']}")]
+                            [InlineKeyboardButton("Apply Now", url=job["data"]["application_link"])]
+                        ]
+                        )
+                    )
+                else:
+                    await bot.send_message(chat_id=self.CHANNEL_ID, text=message, parse_mode="HTML", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Read Full Detail", url=f"https://hahu.jobs/jobs/{job['data']['id']}")]]))
+            else:
+                await bot.send_message(chat_id=self.CHANNEL_ID, text=message, parse_mode="HTML")
             logger.info(f"Message posted to {self.CHANNEL_ID}: {message}")
         except TelegramError as e:
             logger.error(f"Failed to post message to {self.CHANNEL_ID}: {e}")
 
-    # Example usage
 
-@flow(log_prints=True)
+@app.post("/api/daily-jobs-vacancies")   
+@app.get("/api/daily-jobs-vacancies")
+async def server():
+    tg_poster = TelegramPoster()
+    links = daily_jobs_links()
+    for link in links:
+        about_post, job = job_detail(link) 
+        await tg_poster.post_vacancies(about_post, job)
+
+
+@app.post("/api/task")
+@app.get("/api/task")
 async def main():
     telegram_poster = TelegramPoster()
     harmee = HarmeeScraper()
-    # hahu = HahuScraper()
-    jobs = harmee.job_post()
-    # jobs = hahu.get_jobs()
-    jobs = jobs[::-1]
+    hahu = HahuJobsQuery()
+    harmee_jobs = harmee.job_post()
+    hahu_jobs = hahu.get_jobs()
+    jobs = harmee_jobs[:10] + hahu_jobs
+    # jobs = hahu_jobs
     print(json.dumps(jobs, indent=4))
     for job in jobs:
-        await telegram_poster.post_to_channel(job)
+        await telegram_poster.post_to_channel({'data':job})
 
-if __name__ == "__main__":
-    asyncio.run(main.serve(name="auto-job-post", interval=timedelta(days=1)))
+# uncomment when testing locally
 
-    # async def main():
-    #     telegram_poster = TelegramPoster()
-    #     harmee = HarmeeScraper()
-    #     # hahu = HahuScraper()
-    #     jobs = harmee.job_post()
-    #     # jobs = hahu.get_jobs()
-    #     jobs = jobs[::-1]
-    #     print(json.dumps(jobs, indent=4))
-    #     # for job in jobs:
-    #         # await telegram_poster.post_to_channel(job)
-    # asyncio.run(main())
+# if __name__=="__main__":
+#     uvicorn.run("scraper:app", host="localhost", port=8000, reload=True)
