@@ -279,7 +279,7 @@ class TelegramPoster:
             logger.error(f"Failed to post message to {self.CHANNEL_ID}: {e}")
 
 
-@app.post("/api")
+@app.get("/api")
 def health_check():
     return "alive"
 
