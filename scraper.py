@@ -301,7 +301,7 @@ async def main():
     hahu = HahuJobsQuery()
     harmee_jobs = harmee.job_post()
     hahu_jobs = hahu.get_jobs()
-    jobs = harmee_jobs[:10] + hahu_jobs
+    jobs = harmee_jobs[:5] + hahu_jobs
     # jobs = hahu_jobs
     print(json.dumps(jobs, indent=4))
     for job in jobs:

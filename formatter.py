@@ -15,7 +15,7 @@ class MessageContent:
 
     def hahu_message_content(self, job):
         
-        date_obj = datetime.fromisoformat(job['created_at'])
+        date_obj = datetime.fromisoformat(job['deadline'])
         expiration_date = date_obj.strftime("%B %d, %Y")
         
         message = (
